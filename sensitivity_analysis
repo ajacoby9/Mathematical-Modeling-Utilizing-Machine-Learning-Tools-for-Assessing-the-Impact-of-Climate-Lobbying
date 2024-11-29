@@ -5,13 +5,12 @@ from scipy.integrate import odeint
 from sklearn.preprocessing import scale
 from scipy.stats import rankdata
 from sklearn.linear_model import LinearRegression
-import pyDOE2  # For Latin Hypercube Sampling (lhs)
+import pyDOE2
 import matplotlib.pyplot as plt
 
 
 
 
-# Define the model as a function
 def model(y, t, params):
     # Unpack parameters
     alpha_F = params['alpha_F']
@@ -30,10 +29,8 @@ def model(y, t, params):
     #I_F = params['I_F']  # Constant value for I_F
     #I_A = params['I_A']  # Constant value for I_A
 
-    # Unpack state variables
     S, L_F, L_A, C, Y, N = y #M_F, M_A,
 
-    # Define the system of equations
     dS = -(alpha_F + alpha_A + alpha_C) * S
     dL_F = nu_FM_LF * (1 - L_F - L_A)  # Assuming L = 1
     dL_A = nu_AM_LA * (1 - L_F - L_A)  # Assuming L = 1
@@ -48,11 +45,9 @@ def model(y, t, params):
     return [dS, dL_F, dL_A, dC, dY, dN] #dM_F, dM_A,
 
 
-# Initialize parameters
 num_samples = 10000
 param_names = ['alpha_F', 'alpha_A', 'alpha_C', 'nu_FM_LF', 'nu_AM_LA', 'beta_F', 'beta_A', 'phi_F', 'phi_A', 'tau_FI_F', 'tau_AI_A']
 
-# Define parameter ranges
 param_ranges = np.array([
     [0, 1],  # alpha_F
     [0, 1],  # alpha_A
@@ -71,51 +66,41 @@ param_ranges = np.array([
     #[0.9, 1]  # I_A
 ])
 
-# Generate parameter samples using Latin Hypercube Sampling
 param_samples = pyDOE2.lhs(len(param_names), samples=num_samples)
 param_samples_scaled = np.zeros(param_samples.shape)
 for i in range(len(param_names)):
     param_samples_scaled[:, i] = param_samples[:, i] * (param_ranges[i, 1] - param_ranges[i, 0]) + param_ranges[i, 0]
 
-# Initial conditions and time span
 initial_conditions = [1, 0, 0, 0, 0, 0]  # Example initial conditions
 time_span = np.linspace(0, 100, 1000)  # Example time span
 
-# Run simulations and calculate outcomes
 outcomes = np.zeros(num_samples)
 for i in range(num_samples):
     params = dict(zip(param_names, param_samples_scaled[i]))
     solution = odeint(model, initial_conditions, time_span, args=(params,))
 
-    # Extract final values of Y and N
     Y_final = solution[-1, 4]
     N_final = solution[-1, 5]
 
-    # Compute outcome metric
     outcomes[i] = Y_final - N_final
 
-# Rank the data
 param_ranks = np.apply_along_axis(rankdata, 0, param_samples_scaled)
 outcome_ranks = rankdata(outcomes)
 
-# Calculate PRCC
 PRCC_values = np.zeros(len(param_names))
 for i in range(len(param_names)):
     X = param_ranks[:, i]
     Y = outcome_ranks
     Z = np.delete(param_ranks, i, axis=1)
 
-    # Regress X and Y on Z to calculate residuals
     reg_X = LinearRegression().fit(Z, X)
     X_res = X - reg_X.predict(Z)
 
     reg_Y = LinearRegression().fit(Z, Y)
     Y_res = Y - reg_Y.predict(Z)
 
-    # Calculate PRCC as the correlation between residuals
     PRCC_values[i] = np.corrcoef(X_res, Y_res)[0, 1]
 
-# Display PRCC values
 for i in range(len(param_names)):
     print(f'{param_names[i]}: PRCC = {PRCC_values[i]:.4f}')
 
